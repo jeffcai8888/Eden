@@ -571,14 +571,17 @@ void configureFilesystemProvider(const std::string& filepath) {
                                      FileSys::GetCRTypeFromNCAType(FileSys::NCA{file}.GetType()),
                                      program_id, file);
     } else if (res2 == Loader::ResultStatus::Success &&
-               (file_type == Loader::FileType::XCI || file_type == Loader::FileType::NSP)) {
-        const auto nsp = file_type == Loader::FileType::NSP
+               (file_type == Loader::FileType::XCI || file_type == Loader::FileType::XCZ ||
+                file_type == Loader::FileType::NSP || file_type == Loader::FileType::NSZ)) {
+        const auto nsp = (file_type == Loader::FileType::NSP || file_type == Loader::FileType::NSZ)
                              ? std::make_shared<FileSys::NSP>(file)
                              : FileSys::XCI{file}.GetSecurePartitionNSP();
-        for (const auto& title : nsp->GetNCAs()) {
-            for (const auto& entry : title.second) {
-                QtCommon::provider->AddEntry(entry.first.first, entry.first.second, title.first,
-                                             entry.second->GetBaseFile());
+        if (nsp) {
+            for (const auto& title : nsp->GetNCAs()) {
+                for (const auto& entry : title.second) {
+                    QtCommon::provider->AddEntry(entry.first.first, entry.first.second, title.first,
+                                                 entry.second->GetBaseFile());
+                }
             }
         }
     }

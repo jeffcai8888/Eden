@@ -142,6 +142,7 @@ public:
     bool GetHeaderSign1Valid() const;
 
     void GetHeaderSign2(void* dst, size_t size) const;
+    VirtualFile GetStorage() const { return m_body_storage; }
 
 private:
     NcaHeader m_header;

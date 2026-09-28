@@ -14,6 +14,7 @@
 #include "core/file_sys/card_image.h"
 #include "core/file_sys/content_archive.h"
 #include "core/file_sys/nca_metadata.h"
+#include "core/file_sys/ncz_virtual_file.h"
 #include "core/file_sys/partition_filesystem.h"
 #include "core/file_sys/submission_package.h"
 #include "core/file_sys/vfs/vfs_offset.h"
@@ -291,11 +292,21 @@ Loader::ResultStatus XCI::AddNCAFromPartition(XCIPartition part) {
     }
 
     for (const VirtualFile& partition_file : partition->GetFiles()) {
-        if (partition_file->GetExtension() != "nca") {
+        if (partition_file == nullptr) {
+            continue;
+        }
+        if (partition_file->GetExtension() != "nca" && partition_file->GetExtension() != "ncz") {
             continue;
         }
 
-        auto nca = std::make_shared<NCA>(partition_file);
+        VirtualFile file_to_use = partition_file;
+        const bool is_xcz =
+            file->GetName().ends_with(".xcz") || file->GetName().ends_with(".XCZ");
+        if (partition_file->GetExtension() == "ncz" || is_xcz) {
+            file_to_use = std::make_shared<NCZVirtualFile>(partition_file);
+        }
+
+        auto nca = std::make_shared<NCA>(file_to_use);
         if (nca->IsUpdate()) {
             continue;
         }

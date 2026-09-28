@@ -21,6 +21,7 @@
 #include "core/file_sys/content_archive.h"
 #include "core/file_sys/control_metadata.h"
 #include "core/file_sys/nca_metadata.h"
+#include "core/file_sys/ncz_virtual_file.h"
 #include "core/file_sys/registered_cache.h"
 #include "core/file_sys/romfs.h"
 #include "core/file_sys/submission_package.h"
@@ -118,12 +119,12 @@ static std::shared_ptr<NSP> OpenContainerAsNsp(const VirtualFile& file, Loader::
         }
     }
 
-    if (type == Loader::FileType::NSP) {
+    if (type == Loader::FileType::NSP || type == Loader::FileType::NSZ) {
         auto nsp = std::make_shared<NSP>(file);
         return nsp->GetStatus() == Loader::ResultStatus::Success ? nsp : nullptr;
     }
 
-    if (type == Loader::FileType::XCI) {
+    if (type == Loader::FileType::XCI || type == Loader::FileType::XCZ) {
         XCI xci(file);
         if (xci.GetStatus() != Loader::ResultStatus::Success) {
             return nullptr;
@@ -813,7 +814,19 @@ std::vector<ContentProviderEntry> RegisteredCache::ListEntriesFilter(
 static std::shared_ptr<NCA> GetNCAFromNSPForID(const NSP& nsp, const NcaID& id) {
     auto file = nsp.GetFile(fmt::format("{}.nca", Common::HexToString(id, false)));
     if (file == nullptr) {
+        file = nsp.GetFile(fmt::format("{}.ncz", Common::HexToString(id, false)));
+    }
+    if (file == nullptr) {
+        file = nsp.GetFile(fmt::format("{}.NCA", Common::HexToString(id, true)));
+    }
+    if (file == nullptr) {
+        file = nsp.GetFile(fmt::format("{}.NCZ", Common::HexToString(id, true)));
+    }
+    if (file == nullptr) {
         return nullptr;
+    }
+    if (file->GetName().ends_with(".ncz") || file->GetName().ends_with(".NCZ")) {
+        file = std::make_shared<NCZVirtualFile>(file);
     }
     return std::make_shared<NCA>(std::move(file));
 }
@@ -1416,9 +1429,9 @@ void ExternalContentProvider::ScanDirectory(const VirtualDir& dir) {
 
         const auto extension = Common::ToLower(filename.substr(dot_pos + 1));
 
-        if (extension == "nsp") {
+        if (extension == "nsp" || extension == "nsz") {
             ProcessNSP(file);
-        } else if (extension == "xci") {
+        } else if (extension == "xci" || extension == "xcz") {
             ProcessXCI(file);
         }
     }
