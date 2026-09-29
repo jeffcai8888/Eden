@@ -66,3 +66,8 @@ vulkansdk*.exe
 
 # Build-time generated external sources
 externals/generated
+
+# Local signing keys and toolchain (never commit)
+eden-release.keystore
+eden-release-keypass.txt
+.jdk21/
