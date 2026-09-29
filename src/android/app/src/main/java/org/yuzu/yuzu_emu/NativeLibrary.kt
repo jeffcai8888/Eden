@@ -8,6 +8,8 @@ package org.yuzu.yuzu_emu
 
 import android.content.DialogInterface
 import android.net.Uri
+import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.text.Html
 import android.text.method.LinkMovementMethod
 import android.view.Surface
@@ -17,6 +19,7 @@ import androidx.annotation.Keep
 import androidx.core.net.toUri
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.libsdl.app.SDL
+import java.io.File
 import java.lang.ref.WeakReference
 import org.yuzu.yuzu_emu.activities.EmulationActivity
 import org.yuzu.yuzu_emu.fragments.CoreErrorDialogFragment
@@ -60,10 +63,73 @@ object NativeLibrary {
         }
     }
 
+    /**
+     * Translates an externalstorage document/tree content URI back to a real
+     * filesystem path and returns it as a [File], but only when the app holds
+     * the MANAGE_EXTERNAL_STORAGE permission.
+     *
+     * Reading multi-GiB ROMs through the raw content:// fd adds a
+     * ContentProvider hop for every read; opening the real path directly is
+     * cheaper and avoids fd-lifetime quirks of the storage stack.
+     */
+    private fun getDirectFile(path: String): File? {
+        if (!Environment.isExternalStorageManager()) {
+            return null
+        }
+        val uri = try {
+            Uri.parse(path)
+        } catch (e: Exception) {
+            return null
+        }
+        if (uri.scheme != "content" ||
+            uri.authority != "com.android.externalstorage.documents"
+        ) {
+            return null
+        }
+        val segments = uri.pathSegments
+        val docId = try {
+            when {
+                // Standalone tree URI: content://.../tree/<treeId>
+                segments.size == 2 && segments[0] == "tree" ->
+                    Uri.decode(segments[1])
+                // Standalone document URI: content://.../document/<docId>
+                segments.size == 2 && segments[0] == "document" ->
+                    Uri.decode(segments[1])
+                // Document inside a tree: content://.../tree/<treeId>/document/<docId>
+                segments.size == 4 && segments[0] == "tree" && segments[2] == "document" ->
+                    Uri.decode(segments[3])
+                // Anything else (e.g. synthetic child paths built by string
+                // concatenation) is not a valid documents URI.
+                else -> return null
+            }
+        } catch (e: Exception) {
+            return null
+        }
+        val split = docId.split(':', limit = 2)
+        if (split.isEmpty()) {
+            return null
+        }
+        val base =
+            if (split[0] == "primary") "/storage/emulated/0" else "/storage/${split[0]}"
+        val relPath = split.getOrNull(1).orEmpty()
+        val file = File(if (relPath.isEmpty()) base else "$base/$relPath")
+        return if (file.exists()) file else null
+    }
+
     @Keep
     @JvmStatic
     fun openContentUri(path: String?, openmode: String?): Int {
-        return if (DocumentsTree.isNativePath(path!!)) {
+        getDirectFile(path!!)?.let { file ->
+            try {
+                return ParcelFileDescriptor.open(
+                    file,
+                    ParcelFileDescriptor.MODE_READ_ONLY
+                ).detachFd()
+            } catch (e: Exception) {
+                Log.warning("[NativeLibrary]: Failed to open real path ${file.path}, falling back to content resolver")
+            }
+        }
+        return if (DocumentsTree.isNativePath(path)) {
             YuzuApplication.documentsTree!!.openContentUri(path, openmode)
         } else {
             FileUtil.openContentUri(path, openmode)
@@ -73,7 +139,8 @@ object NativeLibrary {
     @Keep
     @JvmStatic
     fun getSize(path: String?): Long {
-        return if (DocumentsTree.isNativePath(path!!)) {
+        getDirectFile(path!!)?.let { return it.length() }
+        return if (DocumentsTree.isNativePath(path)) {
             YuzuApplication.documentsTree!!.getFileSize(path)
         } else {
             FileUtil.getFileSize(path)
@@ -83,7 +150,8 @@ object NativeLibrary {
     @Keep
     @JvmStatic
     fun exists(path: String?): Boolean {
-        return if (DocumentsTree.isNativePath(path!!)) {
+        getDirectFile(path!!)?.let { return it.exists() }
+        return if (DocumentsTree.isNativePath(path)) {
             YuzuApplication.documentsTree!!.exists(path)
         } else {
             FileUtil.exists(path, suppressLog = true)

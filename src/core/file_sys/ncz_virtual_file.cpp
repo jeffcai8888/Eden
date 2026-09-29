@@ -691,6 +691,12 @@ bool NCZVirtualFile::Rename(std::string_view name) {
 bool NCZVirtualFile::DecompressSolidTo(const std::filesystem::path& dest_path) const {
     if (!is_solid_stream) return false;
 
+    // Serialize solid decompression: concurrent callers (e.g. game launch and
+    // metadata scan) would otherwise interleave writes to the same disk-cache
+    // file and corrupt it.
+    static std::mutex s_solid_decompress_mutex;
+    std::lock_guard<std::mutex> decompress_lock(s_solid_decompress_mutex);
+
     std::error_code ec;
     std::filesystem::remove(dest_path, ec);
 
