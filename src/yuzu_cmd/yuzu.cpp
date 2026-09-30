@@ -191,6 +191,9 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
 #ifdef _WIN32
     LocalFree(argv_w);
 #endif
+    if (lp.print_version || lp.print_help) {
+        return SDL_APP_SUCCESS;
+    }
     SdlConfig config{lp.config_path};
 
     Core::ApplyLaunchParams(lp);
@@ -332,6 +335,9 @@ extern "C" SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 }
 extern "C" void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     SdlState *state = (SdlState *)appstate;
+    if (state == nullptr) {
+        return;
+    }
     state->system.DetachDebugger();
     void(state->system.Pause());
     state->system.ShutdownMainProcess();
